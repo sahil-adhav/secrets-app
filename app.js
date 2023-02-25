@@ -30,7 +30,8 @@ mongoose.connect("mongodb://localhost:27017/userDB", {
 const userSchema = new mongoose.Schema({
     email : String,
     password : String,
-    googleId : String
+    googleId : String,
+    secret : String
 });
 
 userSchema.plugin(passportLocalMongoose);
@@ -42,20 +43,14 @@ const User = new mongoose.model("User", userSchema);
 passport.use(User.createStrategy());
 
 passport.serializeUser(function(user, cb) {
-    // process.nextTick(function() {
     cb(null, user.id);
-    // });
-  });
+});
   
-  passport.deserializeUser(function(id, cb) {
-    // db.get('SELECT * FROM users WHERE id = ?', [ id ], function(err, user) {
-    //   if (err) { return cb(err); }
-    //   return cb(null, user);
-    // });
+passport.deserializeUser(function(id, cb) {
     User.findById(id, (err, user) => {
         cb(err, user);
     })
-  });
+});
 
 const GoogleStrategy = require("passport-google-oauth2").Strategy;
 
@@ -67,7 +62,6 @@ passport.use(new GoogleStrategy({
     userProfileURL : "https://www.googleapis.com/oauth2/v3/userinfo"
   },
   function(request, accessToken, refreshToken, profile, done) {
-    console.log(profile);
     User.findOrCreate({ googleId: profile.id }, function (err, user) {
       return done(err, user);
     });
@@ -82,7 +76,6 @@ app.get("/auth/google", passport.authenticate("google", { scope: [ "profile" ]})
 
 app.get( "/auth/google/secrets",
     passport.authenticate( "google", {
-        // successRedirect: "/auth/google/success",
         failureRedirect: "/login"
     }), 
     (req, res) => {
@@ -98,12 +91,45 @@ app.get("/register", (req, res) => {
 });
 
 app.get("/secrets", (req, res) => {
+    User.find({"secret" : {$ne : null}}, (err, foundUsers) => {
+        if(err){
+            console.log(err);
+        }
+        else{
+            res.render("secrets", {
+                usersWithSecrets : foundUsers
+            })
+        }
+    });
+});
+
+app.get("/submit", (req, res) => {
     if(req.isAuthenticated()){
-        res.render("secrets");
+        res.render("submit");
     }
     else{
         res.redirect("/login");
     }
+});
+
+app.post("/submit", (req, res) => {
+    const submittedSecret = req.body.secret;
+
+    //check for user
+    User.findById(req.user.id, (err, foundUser) => {
+        if(err){
+            console.log(err);
+        }
+        else{
+            if(foundUser){
+                foundUser.secret = submittedSecret;
+                foundUser.save();
+                res.redirect("/secrets");
+            }
+        }
+    });
+
+
 });
 
 app.get("/logout", (req, res) => {
@@ -149,6 +175,8 @@ app.post("/login", (req, res) => {
         }
     });
 });
+
+
 
 app.listen(3000, () => {
     console.log("App running at 3000 port.");
